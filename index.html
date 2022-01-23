@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+    <title>ACG Project</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="assets/favicon.ico" type="image/x-icon" />
+</head>
+<body bgcolor="black">
+    <font color="white" size="4" id="text"></font>
+    <canvas id="webgl-canvas" width="1600" height="1000"></canvas>
+
+    //vertex shader
+    <script id="vs" type="x-shader/x-vertex">
+      attribute vec2 aVertexPosition;
+      attribute vec2 aVertexTextureCoords;
+      varying vec2 vTextureCoord;
+      void main(void) {
+        //vTextureCoord = (aVertexTextureCoords);
+
+        vTextureCoord = (aVertexTextureCoords)*0.5+0.5;
+        gl_Position = vec4(aVertexPosition, 0.0, 1.0);
+      }
+    </script>
+    <script id="cutofffs" type="x-shader/x-fragment">
+    precision highp float;
+    uniform sampler2D uSamplerColor;
+    uniform sampler2D uSamplerDepth;
+    varying vec2 vTextureCoord;
+    uniform int uTime;
+
+    float LinearizeDepth(vec2 uv) {
+      float n = 1.0; // camera z near
+      float f = 300.0; // camera z far
+      float z = texture2D(uSamplerDepth, uv).x;
+      return (2.0 * n) / (f + n - z * (f - n));
+    }
+
+    void main(void) {
+      float aspectratio = 16.0/10.0;
+      vec2 uv = vTextureCoord.xy;
+      vec4 depth = texture2D(uSamplerDepth, uv);
+      vec4 frameColor = texture2D(uSamplerColor, uv);
+      float d = LinearizeDepth(uv);
+
+      float dInv = 1.0-d*2.5;
+      if(d > 0.93){
+        //dInv = ((1.0 - d)*10.0 -0.1)*5.0;
+        //dInv = (1.0-d)/5.0*20.0;
+        //gl_FragColor = vec4(d, d, d, 1.0);
+        //gl_FragColor = vec4(frameColor.rgb*dInv, 1);
+        gl_FragColor = vec4(frameColor.rgb, 1.0);
+      } else {
+        gl_FragColor = vec4(frameColor.rgb*dInv*1.5, 1);
+      }
+      //depht map
+      //gl_FragColor = vec4(d, d, d, 1.0);
+      }
+
+    </script>
+
+    //combined fragment shader
+    <script id="fs" type="x-shader/x-fragment">
+      precision highp float;
+      uniform sampler2D uSamplerColor;
+      uniform sampler2D uSamplerDepth;
+      varying vec2 vTextureCoord;
+      uniform int uTime;
+      const float waveSize = 10.0; //10
+      const float amplitude = 0.004; //0.004
+      const float blurclamp = 3.0;  // max blur amount, 3.0
+      const float bias = 0.035; //aperture - bigger values for shallower depth of field, 0.05
+
+      //calculate linear depth
+      float LinearizeDepth(vec2 uv) {
+        float n = 1.0; // camera z near
+        float f = 300.0; // camera z far
+        float z = texture2D(uSamplerDepth, uv).x;
+        return (2.0 * n) / (f + n - z * (f - n));
+      }
+
+      void main() {
+        vec2 uv = vTextureCoord;
+        float X = uv.x * waveSize+float(uTime)/1000.;
+        float Y = uv.y * waveSize+float(uTime)/1000.;
+
+        float Xoffset = cos(X-Y)*amplitude*cos(Y);
+        float Yoffset = sin(X+Y)*amplitude*sin(Y);
+
+        uv.x = uv.x + Xoffset;
+        uv.y = uv.y + Yoffset;
+
+        //depth of field
+        float aspectratio = 16.0/10.0;
+        vec2 aspectcorrect = vec2(1.0,aspectratio);
+        vec4 depth1   = texture2D(uSamplerDepth,uv );
+        float factor = ( depth1.x - 0.9 );
+        vec2 dofblur = vec2 (clamp( factor * bias, -blurclamp, blurclamp ));
+        const float viewDistance = 0.3;
+
+        vec4 col = vec4(0.0);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.15,0.37 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.37,0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.37,-0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.15,-0.37 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.15,0.37 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.37,0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.37,-0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.15,-0.37 )*aspectcorrect) * dofblur);
+
+        col += texture2D(uSamplerColor, uv + (vec2( 0.15,0.37 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.37,0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.37,-0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.15,-0.37 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.15,0.37 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.37,0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.37,-0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.15,-0.37 )*aspectcorrect) * dofblur*0.9);
+
+        col += texture2D(uSamplerColor, uv + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur*0.7);
+
+        col += texture2D(uSamplerColor, uv + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, uv + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur*0.4);
+
+        gl_FragColor = col/41.0-vec4(factor*viewDistance,factor*viewDistance,factor*viewDistance,1.);
+        gl_FragColor.a = 1.0;
+
+        /*
+        //light cutoff
+        float d = LinearizeDepth(uv);
+        float dInv = 1.0-d*2.5;
+        if(d < 0.930){
+          gl_FragColor = vec4(gl_FragColor.rgb*dInv*1.5, 1);
+        }
+        */
+
+    }
+    </script>
+
+    //just depth of field fragment shader
+    <script id="doffs" type="x-shader/x-fragment">
+      precision highp float;
+      uniform sampler2D uSamplerColor;
+      uniform sampler2D uSamplerDepth;
+      varying vec2 vTextureCoord;
+
+      const float blurclamp = 3.0;  // max blur amount
+      const float bias = 0.05; //aperture - bigger values for shallower depth of field
+
+      void main() {
+        float aspectratio = 800.0/600.0;
+        vec2 aspectcorrect = vec2(1.0,aspectratio);
+        vec4 depth1 = texture2D(uSamplerDepth,vTextureCoord );
+        float factor = ( depth1.x - 0.9 );
+        vec2 dofblur = vec2 (clamp( factor * bias, -blurclamp, blurclamp ));
+        const float viewDistance = 0.3;
+
+        vec4 col = vec4(0.0);
+        col += texture2D(uSamplerColor, vTextureCoord);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.15,0.37 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.37,0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.37,-0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.15,-0.37 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.15,0.37 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.37,0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.37,-0.15 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.15,-0.37 )*aspectcorrect) * dofblur);
+
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.15,0.37 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.37,0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.37,-0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.15,-0.37 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.15,0.37 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.37,0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.37,-0.15 )*aspectcorrect) * dofblur*0.9);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.15,-0.37 )*aspectcorrect) * dofblur*0.9);
+
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur*0.7);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur*0.7);
+
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.29,0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.4,0.0 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.29,-0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.0,-0.4 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.29,0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.4,0.0 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( -0.29,-0.29 )*aspectcorrect) * dofblur*0.4);
+        col += texture2D(uSamplerColor, vTextureCoord + (vec2( 0.0,0.4 )*aspectcorrect) * dofblur*0.4);
+
+        gl_FragColor = col/41.0-vec4(factor*viewDistance,factor*viewDistance,factor*viewDistance,1.);
+        gl_FragColor.a = 1.0;
+    }
+    </script>
+
+    //just water effect fragment shader
+    <script id="waterfs" type="x-shader/x-fragment">
+      precision highp float;
+      uniform sampler2D uSamplerColor;
+      uniform sampler2D uSamplerDepth;
+      varying vec2 vTextureCoord;
+      uniform int uTime;
+      const float waveSize = 10.0;
+      const float amplitude = 0.004;
+      void main(void) {
+        vec2 uv = vTextureCoord;
+        float X = uv.x * waveSize+float(uTime)/1000.;
+        float Y = uv.y * waveSize+float(uTime)/1000.;
+
+        float Xoffset = cos(X-Y)*amplitude*cos(Y);
+        float Yoffset = sin(X+Y)*amplitude*sin(Y);
+
+        uv.x = uv.x + Xoffset;
+        uv.y = uv.y + Yoffset;
+
+        vec4 frameColor = texture2D(uSamplerColor, uv);
+        gl_FragColor = frameColor;
+      }
+    </script>
+    <script src="js/renderer.js"></script>
+    <script src="js/geometry.js"></script>
+    <script src="js/transformation.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/vbo.js"></script>
+    <script src="js/material.js"></script>
+    <script src="js/texture.js"></script>
+    <script src="js/mesh.js"></script>
+    <script src="js/light.js"></script>
+    <script src="js/functions.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
