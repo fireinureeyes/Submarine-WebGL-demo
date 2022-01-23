@@ -1,6 +1,11 @@
 # Submarine-WebGL-demo
 WebGL demo of lighting, DoF and wavy deferred shading effects
 
+#### Video (click image to open):
+[![DEMO VIDEO](https://raw.githubusercontent.com/fireinureeyes/Submarine-WebGL-demo/main/thumbnail.jpg)](https://www.youtube.com/watch?v=VXUSjGn_lfs)
+
+## Sources
+
 Main tutorial used to bootstrap the project (.obj loading, transformations, camera and texturing)
 https://www.toptal.com/javascript/3d-graphics-a-webgl-tutorial
 
